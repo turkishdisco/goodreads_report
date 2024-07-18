@@ -1,0 +1,425 @@
+---
+title: "Goodreads Report"
+format:
+  html:
+    standalone: true
+    toc: false
+    df-print: kable
+    theme: default
+    fontsize: 1em
+execute:
+  warning: false
+  echo: false
+  message: false
+---
+
+```{r}
+# libraries and data
+library(pacman)
+pacman::p_load(
+  tidyverse,
+  janitor,
+  lubridate,
+  ggpubr,
+  gt,
+  formattable,
+  RColorBrewer,
+  tidytext,
+  wordcloud,
+  kableExtra
+)
+
+reads = read_csv("goodreads_library_export_curated.csv", na = c("", "NA")) %>% clean_names() %>%
+  select(-c(book_id))
+```
+
+```{r}
+# wrangling
+# filter only books that have been read
+reads = reads %>% filter(exclusive_shelf == "read")
+
+# change 'mass market paperback' and 'perfect paperback' to paperback
+reads = reads %>%
+  mutate(binding = recode(binding,
+                          "Mass Market Paperback" = "Paperback",
+                          "Perfect Paperback" = "Paperback"))
+
+# derive binding2 variable to denote 'digital' vs 'paper' categories
+reads = reads %>%
+  mutate(binding2 = case_when(
+    binding=="ebook" | binding=="Kindle Edition" ~ "Digital",
+    binding=="Hardcover" | binding=="Paperback" ~ "Paper"))
+
+# truncate titles
+reads$title_trunc = str_trunc(reads$title, 50, side=c("right"))
+reads$title_trunc_25 = str_trunc(reads$title, 25, side=c("right"))
+
+
+# Change dates to proper format
+reads$date_read = as.Date(reads$date_read, format = "%d/%m/%Y")
+reads$date_added = as.Date(reads$date_added, format = "%d/%m/%Y")
+
+reads$year_read = year(reads$date_read)
+reads$month_read = month(reads$date_read, label=T)
+
+# Calculate time taken to read (displays as eg '26 Days')
+reads$time_taken = reads$date_read - reads$date_added
+
+# Split up Bookshelves
+reads = reads %>% 
+  separate(bookshelves, into=c("Fiction", "Subcat1", "Subcat2"), sep=",")
+```
+
+```{r}
+# all-time
+
+date = Sys.Date()
+this_year = lubridate::year(date)
+
+this_year_pretty = format(date, format="%d %B %Y")
+
+books = n_distinct(reads$title)
+authors = n_distinct(reads$author)
+
+fiction = reads %>% filter(Fiction=="fiction") %>% summarise(books = n()) %>% as.numeric()
+fiction.pc = paste(round( (fiction / books)*100,0), "\\%", sep="")
+nonfiction = reads %>% filter(Fiction=="non-fiction") %>% summarise(books = n()) %>% as.numeric()
+nonfiction.pc = paste(round( (nonfiction / books)*100,0), "\\%", sep="")
+
+digital = reads %>% filter(binding2=="Digital") %>% summarise(books = n()) %>% as.numeric()
+digital.pc = paste(round( (digital / books)*100,0), "\\%", sep="")
+
+paper = reads %>% filter(binding2=="Paper") %>% summarise(books = n()) %>% as.numeric()
+paper.pc = paste(round( (paper / books)*100,0), "\\%", sep="")
+
+last.title = as.character(reads[1,1])
+last.author = as.character(reads[1,2])
+last.date = reads[1,14] %>% pull()
+# last.date = format(last.date,"%d %B %Y")
+
+reads$title_trunc_60 = str_trunc(reads$title, 60, side=c("right"))
+```
+
+| As of `r this_year_pretty`:         |            |
+| ------------------------------------|------------|
+| Total books read                    | `r books` (`r authors` authors)  |
+| Fiction                             | `r fiction` (`r fiction.pc`) |
+| Non-fiction                         | `r nonfiction` (`r nonfiction.pc`) | 
+| Digital books                       | `r digital` (`r digital.pc`) |
+| Paper books                         | `r paper` (`r paper.pc`) |
+
+The last book I read was **`r last.title`** by `r last.author` on `r last.date`. 
+
+
+```{r}
+# this year
+
+d <- as.POSIXlt(as.Date(date))
+d$year <- d$year-1
+last_year = year(d)
+
+read_this_year = reads %>% filter(year_read==this_year) %>% summarise(books = n()) %>% as.numeric()
+read_last_year = reads %>% filter(year_read==last_year) %>% summarise(books = n()) %>% as.numeric()
+
+fiction_this_yr = reads %>% filter(year_read==this_year & Fiction=="fiction") %>% summarise(books = n()) %>% as.numeric()
+fiction_this_yr_pc = paste(round( (fiction_this_yr / read_this_year)*100,0), "\\%", sep="")
+
+nonfiction_this_yr = reads %>% filter(year_read==this_year & Fiction=="non-fiction") %>% summarise(books = n()) %>% as.numeric()
+nonfiction_this_yr_pc = paste(round( (nonfiction_this_yr / read_this_year)*100,0), "\\%", sep="")
+
+digital_this_yr = reads %>% filter(year_read==this_year & binding2=="Digital") %>% summarise(books = n()) %>% as.numeric()
+digital_this_yr_pc = paste(round( (digital_this_yr / read_this_year)*100,0), "\\%", sep="")
+
+paper_this_yr = reads %>% filter(year_read==this_year & binding2=="Paper") %>% summarise(books = n()) %>% as.numeric()
+paper_this_yr_pc = paste(round( (paper_this_yr / read_this_year)*100,0), "\\%", sep="")
+
+time = reads %>% filter(year_read==this_year) %>% summarise(mean_time = median(time_taken, na.rm=T)) %>% as.numeric()
+time = round(time,2)
+time = paste(time, "days")
+time.min = reads %>% filter(year_read==this_year) %>% summarise(mean_time = min(time_taken, na.rm=T)) %>% as.numeric()
+time.max = reads %>% filter(year_read==this_year) %>% summarise(mean_time = max(time_taken, na.rm=T)) %>% as.numeric()
+
+diff = read_this_year - read_last_year
+direction = ifelse(diff == 0, "the same as", ifelse(diff > 0, "more than", "fewer than"))
+diff2 = abs(read_this_year - read_last_year)
+
+# for authors which are new for this year
+authors_til_last_year = reads %>%
+  filter(year_read <= last_year) %>%
+  select(author, title_trunc_25)
+
+authors_this_year = reads %>%
+  filter(year_read == this_year) %>%
+  select(author, title_trunc_25)
+```
+
+| In `r this_year` so far...:   |            |
+| ------------------------------------|------------|
+| Total books read                    | `r read_this_year` (`r diff2` `r direction` last year)  |
+| Fiction                             | `r fiction_this_yr` (`r fiction_this_yr_pc`) |
+| Non-fiction                         | `r nonfiction_this_yr` (`r nonfiction_this_yr_pc`) | 
+| Digital books                       | `r digital_this_yr` (`r digital_this_yr_pc`) |
+| Paper books                         | `r paper_this_yr` (`r paper_this_yr_pc`) |
+| Median days to read a book         | `r time` (range: `r time.min`-`r time.max`) |
+
+
+# Total Books read
+
+```{r}
+# all books over time
+#| fig-align: "left"
+#| fig-width: 8
+#| fig-height: 4
+reads %>% group_by(year_read) %>% 
+  summarise(books_read = n()) %>% 
+  na.omit() %>%
+  ggplot(aes(year_read, books_read, label = books_read)) + theme_classic() +
+  geom_bar(stat="identity", fill="#90bcd4") +
+  geom_text(vjust=-0.2, size=3.5) +
+  theme(panel.grid.major.y = element_line()) +
+  ylab("Books Read") + theme(axis.title.x = element_blank())  +
+  ggtitle("Books read by year") +
+  theme(legend.title = element_blank(), legend.position = "top") +
+  theme(plot.title = element_text(hjust=0.5),
+        plot.subtitle = element_text(hjust=0.5)) +
+  scale_y_continuous(breaks=seq(0,50,10)) 
+```
+
+```{r}
+#| fig-align: "left"
+#| fig-width: 8
+#| fig-height: 4
+# % Fiction books over time
+a = reads %>% 
+  filter(!is.na(year_read)) %>%
+  group_by(year_read, Fiction) %>%
+  summarise(total = n()) %>%
+  mutate(perc = total/sum(total)*100) %>%
+  filter(Fiction == "fiction") %>%
+  ggplot(aes(year_read, perc)) + theme_classic() +
+  geom_hline(yintercept=50, colour="grey", linetype="dashed") +
+  stat_summary(fun=mean, geom="line", linewidth=0.7, colour='#1F78B4') +
+  ylab("Books Read (%)") + theme(axis.title.x = element_blank()) +
+  ggtitle("Percent Fiction") +
+  theme(panel.grid.major.y = element_line(),
+        plot.title = element_text(hjust=0.5)) +
+  expand_limits(y = c(0,100))
+
+# % Paper books over time
+b = reads %>% 
+  filter(!is.na(year_read)) %>%
+  group_by(year_read, binding2) %>%
+  summarise(total = n()) %>%
+  mutate(perc = total/sum(total)*100) %>%
+  filter(binding2 == "Paper") %>%
+  ggplot(aes(year_read, perc)) + theme_classic() +
+  geom_hline(yintercept=50, colour="grey", linetype="dashed") +
+  stat_summary(fun=mean, geom="line", linewidth=0.7, colour='#33A02C') +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank()) +
+  ggtitle("Percent Paper vs Kindle") +
+  theme(panel.grid.major.y = element_line(),
+        plot.title = element_text(hjust=0.5)) +
+  expand_limits(y = c(0,100))
+
+
+# together
+ggarrange(a, b, ncol=2)
+```
+
+# Book Length and ratings
+```{r}
+#| fig-align: "left"
+#| fig-width: 9
+#| fig-height: 4
+#violin of length - this year
+median.length = median(reads$number_of_pages, na.rm=T)
+
+a = reads %>% 
+  ggplot(aes(x=Fiction, y=number_of_pages)) + 
+  geom_violin(draw_quantiles = 0.5) + 
+  geom_point(position = position_jitter(width=0.05), aes(colour=Fiction), alpha=0.5, size=0.5) +
+  theme_classic() +  
+  theme(axis.title.x = element_blank()) + 
+  ggtitle("Book length:", subtitle=paste("Median:", round(median.length,0))) +
+  theme(plot.title = element_text(hjust=0.5),
+        plot.subtitle = element_text(hjust=0.5),
+        axis.title.y = element_blank()) +
+  theme(legend.position = "none") +
+  scale_colour_manual(breaks = c("fiction", "non-fiction"), labels=c("Fiction", "Non-Fiction"),
+                    values=c("#A6CEE3", "#1F78B4"))
+
+mean.rating = mean(reads$my_rating, na.rm=T)
+
+b = reads %>% 
+  filter(my_rating!=0) %>%
+  group_by(Fiction, my_rating) %>%
+  summarise(rating = n()) %>%
+  mutate(pc  = rating / sum(rating)) %>%
+  ggplot(aes(x=my_rating, y=pc, fill=Fiction)) + 
+  geom_bar(stat="identity",position = position_dodge(width=0.6), width=0.5) + 
+  scale_fill_manual(breaks = c("fiction", "non-fiction"), labels=c("Fiction", "Non-Fiction"),
+                    values=c("#A6CEE3", "#1F78B4")) +
+  theme_classic() +
+  scale_y_continuous(labels = scales::percent_format(accuracy=1)) +
+  geom_text(aes(label=round(pc*100,0)), size=2.5, vjust=-0.5,
+            position = position_dodge(width=0.6)) +
+  ggtitle("Ratings:", subtitle = paste("Mean:", round(mean.rating,2))) +
+  theme(plot.title = element_text(hjust=0.5),
+        plot.subtitle = element_text(hjust=0.5),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank()) + 
+  scale_x_continuous(breaks=seq(1,5,1)) +
+  theme(legend.position = "right", legend.title = element_blank()) +
+  theme(legend.key.size = unit(0.4, "cm")) 
+
+ggarrange(a, b, ncol=2, widths = c(0.7,1))
+```
+
+# Book length over time
+```{r}
+#| fig-align: "left"
+#| fig-width: 8
+#| fig-height: 4
+reads %>% 
+  ggplot(aes(x=year_read, y=number_of_pages, fill=year_read)) + 
+  geom_hline(yintercept=median.length, linetype="dashed", colour="darkgrey") +
+  geom_boxplot(aes(group=year_read), alpha=0.7) +
+  theme_classic() +
+  scale_x_continuous(breaks=seq(2005,this_year,1)) +
+  scale_fill_gradientn(colours=brewer.pal(4,"YlGn")) +
+  theme(axis.text.x = element_text(angle=45, vjust=0.5),
+        panel.grid.major = element_line(),
+        axis.title = element_blank(),
+        plot.title = element_text(hjust=0.5),
+        legend.position="none") +
+  ggtitle("Book length over time")
+```
+
+# Time taken to read
+```{r}
+#| fig-align: "left"
+#| fig-width: 8
+#| fig-height: 4
+reads %>%
+  filter(year_read > 2013) %>%
+  ggplot(aes(x=year_read, y=time_taken, group=year_read, fill=year_read)) +
+  geom_hline(yintercept=mean(reads$time_taken, na.rm=T), linetype="dashed", colour="grey") +
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_gradientn(colours=brewer.pal(4,"YlGn")) +
+  theme(panel.grid.major = element_line(),
+        axis.title.x = element_blank(),
+        plot.title = element_text(hjust=0.5),
+        legend.position="none",
+        axis.text.x = element_text(angle=45, vjust=0.5)) +
+  scale_x_continuous(breaks=seq(2014,this_year,1)) +
+  ylab("Days") + xlab("Year") +
+  ggtitle("Time taken to read books") 
+```
+
+# Publication Year
+```{r}
+#| fig-align: "left"
+#| fig-width: 9
+#| fig-height: 4
+reads %>%
+  filter(original_publication_year > 1800) %>%
+  ggplot(aes(x=original_publication_year)) + 
+  geom_bar(stat="count", aes(fill=Fiction)) +
+  scale_fill_manual(breaks = c("fiction", "non-fiction"), labels=c("Fiction", "Non-Fiction"),
+                    values=c("#A6CEE3", "#1F78B4")) +
+  theme_classic() +
+  scale_x_continuous(breaks = c(1800, 1825, 1850, 1875, 1900, 1925, 1950, 1975, 2000,
+                                2020)) +
+  theme(legend.position = "top",
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(hjust=0.5)) +
+  ggtitle("Books read by publication year")
+```
+
+# Reviews
+```{r}
+#| fig-align: "left"
+#| fig-width: 8
+#| fig-height: 4
+
+# remove 'br' tokens
+reads$my_review = str_replace_all(
+  reads$my_review,
+  c("<br"= ""))
+
+tidy_reviews = reads %>% 
+  filter(!is.na(my_review)) %>%
+  select(my_review) %>%
+  unnest_tokens(word, my_review) %>%
+  anti_join(stop_words) %>%
+  count(word)
+
+wordcloud(words = tidy_reviews$word, freq = tidy_reviews$n, min.freq = 10,
+          max.words=100, random.order=FALSE, rot.per=0.35,  colors=brewer.pal(8, "Dark2"),
+          scale=c(3.5,1))
+# scale controls the size of the most and least frequent words
+```
+
+## Longest and shortest books
+```{r}
+# longest
+reads %>% 
+  filter(my_rating!=0) %>%
+  select(title_trunc, author, number_of_pages) %>%
+  arrange(desc(number_of_pages)) %>%
+  top_n(5) %>%
+  gt() %>%
+  fmt_integer() %>%
+  cols_label(
+    title_trunc = "Title",
+    author = "Author",
+    number_of_pages = "Page count"
+  ) %>%
+  tab_header("Longest reads")
+  
+# shortest
+reads %>% 
+  filter(my_rating!=0) %>%
+  select(title_trunc, author, number_of_pages) %>%
+  arrange(number_of_pages) %>%
+  top_n(-5) %>%
+  gt() %>%
+  fmt_integer() %>%
+  cols_label(
+    title_trunc = "Title",
+    author = "Author",
+    number_of_pages = "Page count"
+  ) %>%
+  tab_header("Shortest reads")
+
+```
+
+## Most popular authors
+```{r }
+tally = reads %>% 
+  group_by(author) %>% 
+  tally(sort=T) %>% filter(n>=3)
+
+ratings = reads %>% 
+  filter(author %in% tally$author) %>%
+  group_by(author) %>%
+  summarise(mean.rating = round(mean(my_rating, na.rm=T),1))
+
+merged = merge(tally, ratings, by="author") %>% 
+  arrange(desc(n)) 
+
+merged %>% 
+  gt() %>%
+  data_color( 
+    columns = c(mean.rating), 
+    colors = scales::col_numeric( 
+      palette = c("red", "green"),
+      domain = c(min(merged$mean.rating), max(merged$mean.rating))),
+    apply_to = "fill"
+    ) %>%
+  cols_label(author = "Author", n = "Books", mean.rating = "Mean Rating")
+```
+

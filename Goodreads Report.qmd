@@ -369,6 +369,8 @@ reads %>% filter(year_read==this_year) %>%
         panel.grid.minor = element_blank(),
         panel.grid.major.y = element_blank(),
         axis.text = element_text(size=10))
+
+#ggplotly(t)
 ```
 
 # Reviews

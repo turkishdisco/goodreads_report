@@ -14,6 +14,7 @@ execute:
 ---
 
 ```{r}
+#| message: false
 # libraries and data
 library(pacman)
 pacman::p_load(
@@ -176,7 +177,7 @@ reads %>% group_by(year_read) %>%
   ggplot(aes(year_read, books_read, label = books_read)) + theme_classic() +
   geom_bar(stat="identity", fill="#90bcd4") +
   geom_text(vjust=-0.3, size=3.5) +
-  theme(panel.grid.major.y = element_line(),
+  theme(panel.grid.major.y = element_line(colour = "grey80"),
         legend.title = element_blank(),
         legend.position = "top",
         plot.title = element_text(hjust=0.5),
@@ -203,7 +204,7 @@ a = reads %>%
   stat_summary(fun=mean, geom="line", linewidth=0.7, colour='#1F78B4') +
   ylab("Books Read (%)") + theme(axis.title.x = element_blank()) +
   ggtitle("Percent Fiction") +
-  theme(panel.grid.major.y = element_line(),
+  theme(panel.grid.major.y = element_line(colour="grey90"),
         plot.title = element_text(hjust=0.5),
         axis.text = element_text(size=10)) +
   expand_limits(y = c(0,100))
@@ -220,7 +221,7 @@ b = reads %>%
   stat_summary(fun=mean, geom="line", linewidth=0.7, colour='#33A02C') +
   theme(axis.title.x = element_blank(), axis.title.y = element_blank()) +
   ggtitle("Percent Paper vs Kindle") +
-  theme(panel.grid.major.y = element_line(),
+  theme(panel.grid.major.y = element_line(colour="grey90"),
         plot.title = element_text(hjust=0.5),
         axis.text = element_text(size=10)) +
   expand_limits(y = c(0,100))
@@ -294,7 +295,7 @@ reads %>%
   scale_x_continuous(breaks=seq(2005,this_year,1)) +
   scale_fill_gradientn(colours=brewer.pal(4,"YlGn")) +
   theme(axis.text.x = element_text(angle=45, vjust=0.5),
-        panel.grid.major = element_line(),
+        panel.grid.major = element_line(colour="grey90"),
         axis.title = element_blank(),
         plot.title = element_text(hjust=0.5),
         legend.position="none",
@@ -314,7 +315,7 @@ reads %>%
   geom_boxplot() +
   theme_classic() +
   scale_fill_gradientn(colours=brewer.pal(4,"YlGn")) +
-  theme(panel.grid.major = element_line(),
+  theme(panel.grid.major = element_line(colour="grey90"),
         axis.title.x = element_blank(),
         plot.title = element_text(hjust=0.5),
         legend.position="none",
@@ -329,7 +330,7 @@ reads %>%
 ```{r}
 #| fig-align: "left"
 #| fig-width: 9
-#| fig-height: 4
+#| fig-height: 4.5
 reads %>%
   filter(original_publication_year > 1800) %>%
   ggplot(aes(x=original_publication_year)) + 
@@ -396,6 +397,19 @@ wordcloud(words = tidy_reviews$word, freq = tidy_reviews$n, min.freq = 10,
           scale=c(3.5,1))
 # scale controls the size of the most and least frequent words
 ```
+
+A random review
+```{r}
+reads %>%
+  select(title_trunc_60, my_review, my_rating) %>%
+  filter(!is.na(my_review)) %>%
+  slice_sample(n=1) %>%
+  gt() %>%
+  cols_label(title_trunc_60 = "Title", 
+             my_review = "Review",
+             my_rating = "Rating")
+```
+
 
 ## Longest and shortest books
 ```{r}

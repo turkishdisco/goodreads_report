@@ -74,12 +74,15 @@ reads = reads %>%
 ```{r}
 # all-time
 
+#date = Sys.Date()
+#this_year = lubridate::year(date)
+#date = "2025/12/31"
 date = Sys.Date()
 this_year = lubridate::year(date)
 
 this_year_pretty = format(date, format="%d %B %Y")
 
-books = n_distinct(reads$title)
+books = length(reads$title)
 authors = n_distinct(reads$author)
 
 fiction = reads %>% filter(Fiction=="fiction") %>% summarise(books = n()) %>% as.numeric()
@@ -93,12 +96,13 @@ digital.pc = paste(round( (digital / books)*100,0), "\\%", sep="")
 paper = reads %>% filter(binding2=="Paper") %>% summarise(books = n()) %>% as.numeric()
 paper.pc = paste(round( (paper / books)*100,0), "\\%", sep="")
 
-last.title = as.character(reads[1,1])
-last.author = as.character(reads[1,2])
-last.date = reads[1,14] %>% pull()
-# last.date = format(last.date,"%d %B %Y")
-
 reads$title_trunc_60 = str_trunc(reads$title, 60, side=c("right"))
+# more dynamic way of determining last book read
+last.book = reads %>% slice_head(n=1)
+
+last.title = as.character(last.book$title)
+last.author = as.character(last.book$author)
+last.date = as.character(format(as.Date(last.book$date_read), "%d %B %Y"))
 ```
 
 | As of `r this_year_pretty`:         |            |
@@ -309,7 +313,8 @@ reads %>%
 #| fig-width: 8
 #| fig-height: 4
 reads %>%
-  filter(year_read > 2013) %>%
+  filter(year_read > 2013,
+         time_taken > 0) %>%
   ggplot(aes(x=year_read, y=time_taken, group=year_read, fill=year_read)) +
   geom_hline(yintercept=mean(reads$time_taken, na.rm=T), linetype="dashed", colour="grey") +
   geom_boxplot() +
@@ -417,8 +422,7 @@ reads %>%
 reads %>% 
   filter(my_rating!=0) %>%
   select(title_trunc, author, number_of_pages) %>%
-  arrange(desc(number_of_pages)) %>%
-  top_n(5) %>%
+  slice_max(order_by = number_of_pages, n = 7, with_ties = T) %>%
   gt() %>%
   fmt_integer() %>%
   cols_label(
@@ -432,8 +436,7 @@ reads %>%
 reads %>% 
   filter(my_rating!=0) %>%
   select(title_trunc, author, number_of_pages) %>%
-  arrange(number_of_pages) %>%
-  top_n(-5) %>%
+  slice_min(order_by = number_of_pages, n = 7, with_ties = T) %>%
   gt() %>%
   fmt_integer() %>%
   cols_label(

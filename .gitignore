@@ -4,8 +4,8 @@
 .Ruserdata
 *.png
 *.csv
-*.html
 *.css
 *.js
 Goodreads Report_files/*
 Goodreads-Report_files/*
+.positai
